@@ -22,10 +22,10 @@ import (
 
 func main() {
 	gp, err := gpool.NewGPool(&gpool.Options{
-		MaxWorker:   5,
-		MinWorker:   2,
-		JobBuffer:   1,
-		IdleTimeout: 120 * time.Second,
+		MaxWorker:   5, 				// 最大的协程数
+		MinWorker:   2, 				// 最小的协程数
+		JobBuffer:   1, 				// 缓冲队列的大小
+		IdleTimeout: 120 * time.Second, // 协程的空闲超时退出时间
 	})
 
 	if err != nil {
