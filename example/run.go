@@ -1,16 +1,3 @@
-# gpool
-
-goroutine pool
-
-## Feature
-
-* resize worker num
-* worker idle timeout
-* aysnc & sync mode
-
-### Usage
-
-```go
 package main
 
 import (
@@ -49,4 +36,3 @@ func main() {
 
 	wg.Done()
 }
-```
