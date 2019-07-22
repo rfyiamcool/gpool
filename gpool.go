@@ -19,7 +19,7 @@ var (
 	ErrJobChanFull  = errors.New("gpool job chan is full")
 	ErrInvalidValue = errors.New("invalid value")
 
-	GlobalGoPool *gpool
+	GlobalGoPool *GoPool
 )
 
 type jobFunc func()
@@ -39,7 +39,7 @@ type Options struct {
 	DispatchPeriod time.Duration
 }
 
-type gpool struct {
+type GoPool struct {
 	sync.Mutex
 	ctx       context.Context
 	ctxCancel context.CancelFunc
@@ -65,8 +65,8 @@ type gpool struct {
 	call jobFunc
 }
 
-func NewGPool(op *Options) (*gpool, error) {
-	pool := gpool{}
+func NewGPool(op *Options) (*GoPool, error) {
+	pool := GoPool{}
 
 	// cp option
 	pool.maxWorker = op.MaxWorker
@@ -117,7 +117,7 @@ func NewGPool(op *Options) (*gpool, error) {
 }
 
 // TODO: scan workers' timer in heap, kill worker
-func (p *gpool) dispatchRun(d time.Duration) {
+func (p *GoPool) dispatchRun(d time.Duration) {
 	ticker := time.NewTicker(d)
 	for {
 		select {
@@ -141,7 +141,7 @@ func (p *gpool) dispatchRun(d time.Duration) {
 	}
 }
 
-func (p *gpool) validator() error {
+func (p *GoPool) validator() error {
 	if p.maxWorker <= 0 {
 		return ErrInvalidValue
 	}
@@ -152,7 +152,7 @@ func (p *gpool) validator() error {
 	return nil
 }
 
-func (p *gpool) spawnWorker(num int) {
+func (p *GoPool) spawnWorker(num int) {
 	// two check, reduce lock syscall
 	if p.curWorker == p.maxWorker {
 		return
@@ -171,7 +171,7 @@ func (p *gpool) spawnWorker(num int) {
 	}
 }
 
-func (p *gpool) ResizeMaxWorker(maxWorker int) error {
+func (p *GoPool) ResizeMaxWorker(maxWorker int) error {
 	if maxWorker <= 0 || maxWorker < p.minWorker {
 		return ErrInvalidValue
 	}
@@ -180,14 +180,14 @@ func (p *gpool) ResizeMaxWorker(maxWorker int) error {
 	return nil
 }
 
-func (p *gpool) trySpawnWorker() {
+func (p *GoPool) trySpawnWorker() {
 	if len(p.jobChan) > 0 && p.maxWorker > p.curWorker {
 		p.spawnWorker(p.maxWorker / bucketSize)
 	}
 }
 
 // after push job queue, retrun direct
-func (p *gpool) ProcessAsync(f jobFunc) error {
+func (p *GoPool) ProcessAsync(f jobFunc) error {
 	task := taskModel{
 		call: f,
 		res:  nil,
@@ -201,7 +201,7 @@ func (p *gpool) ProcessAsync(f jobFunc) error {
 }
 
 // wait jobFunc finish
-func (p *gpool) ProcessSync(f jobFunc) error {
+func (p *GoPool) ProcessSync(f jobFunc) error {
 	task := taskModel{
 		call: f,
 		res:  make(chan bool, 1),
@@ -215,7 +215,7 @@ func (p *gpool) ProcessSync(f jobFunc) error {
 	}
 }
 
-func (p *gpool) handle() {
+func (p *GoPool) handle() {
 	timer := time.NewTimer(p.idleTimeout)
 	for {
 		select {
@@ -248,7 +248,7 @@ func (p *gpool) handle() {
 	}
 }
 
-func (p *gpool) workerExit(timer *time.Timer) error {
+func (p *GoPool) workerExit(timer *time.Timer) error {
 	p.Lock()
 	defer p.Unlock()
 
@@ -262,7 +262,7 @@ func (p *gpool) workerExit(timer *time.Timer) error {
 	return nil
 }
 
-func (p *gpool) Close() {
+func (p *GoPool) Close() {
 	p.Lock()
 	// double check
 	if p.isClose {
@@ -275,9 +275,8 @@ func (p *gpool) Close() {
 	p.Unlock()
 }
 
-func (p *gpool) Stats() {
+func (p *GoPool) Stats() {
 }
 
-func (p *gpool) Wait() {
+func (p *GoPool) Wait() {
 }
-

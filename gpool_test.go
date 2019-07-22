@@ -48,7 +48,7 @@ func TestBaseRun(t *testing.T) {
 	joinRun(t, num, pool, 0)
 }
 
-func joinRun(t *testing.T, num int, pool *gpool, blockTime time.Duration) {
+func joinRun(t *testing.T, num int, pool *GoPool, blockTime time.Duration) {
 	incr := new(counter)
 	res := make(chan bool, num)
 
@@ -140,4 +140,3 @@ func TestClosePool(t *testing.T) {
 func print(msg interface{}) {
 	fmt.Println(msg)
 }
-
