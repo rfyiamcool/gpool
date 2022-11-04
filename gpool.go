@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DefaultGPoolMaxWorker = 50
+	DefaultGPoolMaxWorker = 5
 	DefaultIdleTimeout    = 180 * time.Second
 	DefaultDispatchPeriod = 200 * time.Millisecond
 
@@ -41,26 +41,20 @@ type Options struct {
 
 type GoPool struct {
 	sync.Mutex
-	ctx       context.Context
-	ctxCancel context.CancelFunc
-	isClose   bool
+	ctx     context.Context
+	cancel  context.CancelFunc
+	isClose bool
 
 	// opt *gpOptions
-	maxWorker      int
+	maxWorker int
+	curWorker int
+	minWorker int
+
 	idleTimeout    time.Duration
 	dispatchPeriod time.Duration
 
-	// inside
-	curWorker int
-
-	// TODO: Feature
-	minWorker int
-	// idleWorker    int
-	// runningWorker int
-
 	jobChan   chan taskModel
 	jobBuffer int
-	killChan  chan bool
 
 	call jobFunc
 }
@@ -76,43 +70,33 @@ func NewGPool(op *Options) (*GoPool, error) {
 	pool.dispatchPeriod = op.DispatchPeriod
 
 	// reset default var
-	if pool.maxWorker <= 0 {
+	if pool.maxWorker < 5 {
 		pool.maxWorker = DefaultGPoolMaxWorker
 	}
-	// too slow
 	if pool.idleTimeout < time.Second {
 		pool.idleTimeout = DefaultIdleTimeout
 	}
 	if pool.dispatchPeriod < time.Millisecond || pool.dispatchPeriod > time.Second {
 		pool.dispatchPeriod = DefaultDispatchPeriod
 	}
-	if pool.minWorker < 1 {
-		pool.minWorker = pool.maxWorker / 5
+	if pool.minWorker <= 0 {
+		pool.minWorker = 1
 	}
 	if pool.jobBuffer <= 0 {
 		// jobBuffer must > 0, dispatch add goworker with the option
 		pool.jobBuffer = pool.maxWorker
 	}
-
-	// err
 	if pool.maxWorker < pool.minWorker {
-		return &pool, errors.New("maxWorker must > minWorker")
+		return &pool, errors.New("maxWorker must be more than minWorker")
 	}
 
-	// init signal
-	pool.jobChan = make(chan taskModel, pool.jobBuffer)
-	pool.killChan = make(chan bool, 0)
-
-	// inside var
-	pool.isClose = false
 	ctx, cancel := context.WithCancel(context.Background())
 	pool.ctx = ctx
-	pool.ctxCancel = cancel
+	pool.cancel = cancel
+	pool.jobChan = make(chan taskModel, pool.jobBuffer)
 
 	// start
-	// go pool.dispatchRun(pool.dispatchPeriod)
 	pool.spawnWorker(pool.maxWorker)
-
 	return &pool, nil
 }
 
@@ -153,21 +137,20 @@ func (p *GoPool) validator() error {
 }
 
 func (p *GoPool) spawnWorker(num int) {
-	// two check, reduce lock syscall
+	p.Lock()
+	defer p.Unlock()
+
 	if p.curWorker == p.maxWorker {
 		return
 	}
-
-	p.Lock()
-	defer p.Unlock()
 
 	for i := 0; i < num; i++ {
 		if p.curWorker >= p.maxWorker {
 			return
 		}
 
-		go p.handle()
 		p.curWorker++
+		go p.handler()
 	}
 }
 
@@ -215,8 +198,10 @@ func (p *GoPool) ProcessSync(f jobFunc) error {
 	}
 }
 
-func (p *GoPool) handle() {
+func (p *GoPool) handler() {
 	timer := time.NewTimer(p.idleTimeout)
+	defer timer.Stop()
+
 	for {
 		select {
 		case job := <-p.jobChan:
@@ -236,13 +221,7 @@ func (p *GoPool) handle() {
 
 			return
 
-		case <-p.killChan:
-			// recv signal {exit} by dispatch; judge ; then return
-			err := p.workerExit(timer)
-			if err != nil {
-				continue
-			}
-
+		case <-p.ctx.Done():
 			return
 		}
 	}
@@ -254,7 +233,7 @@ func (p *GoPool) workerExit(timer *time.Timer) error {
 
 	if p.curWorker <= p.minWorker {
 		timer.Reset(p.idleTimeout)
-		return errors.New("don't <= minWorker")
+		return errors.New("don't less than minWorker")
 	}
 
 	p.curWorker--
@@ -264,19 +243,13 @@ func (p *GoPool) workerExit(timer *time.Timer) error {
 
 func (p *GoPool) Close() {
 	p.Lock()
+	defer p.Unlock()
+
 	// double check
 	if p.isClose {
-		p.Unlock()
 		return
 	}
 
+	p.cancel()
 	p.isClose = true
-	p.ctxCancel()
-	p.Unlock()
-}
-
-func (p *GoPool) Stats() {
-}
-
-func (p *GoPool) Wait() {
 }
